@@ -76,6 +76,10 @@ export function useTranslations() {
     saveError.value = null
   }
 
+  function clearSaveError() {
+    saveError.value = null
+  }
+
   async function saveAll() {
     saving.value = true
     saveError.value = null
@@ -122,7 +126,7 @@ export function useTranslations() {
     pendingEdits, isDirty, pendingCount,
     saving, saveError,
     getCellValue, isCellDirty, setCellValue,
-    saveAll, discardEdits,
+    saveAll, discardEdits, clearSaveError,
     load,
   }
 }

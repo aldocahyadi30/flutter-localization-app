@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import Button from 'primevue/button'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
+import IconField from 'primevue/iconfield'
+import InputIcon from 'primevue/inputicon'
 import InputText from 'primevue/inputtext'
+import Message from 'primevue/message'
+import ProgressSpinner from 'primevue/progressspinner'
+import Tag from 'primevue/tag'
+import Toolbar from 'primevue/toolbar'
 import { nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTranslations } from '../composables/useTranslations'
@@ -15,7 +23,7 @@ const {
   filteredRows, locales, filterQuery, missingCount,
   isDirty, pendingCount, saving, saveError,
   getCellValue, isCellDirty, setCellValue,
-  saveAll, discardEdits,
+  saveAll, discardEdits, clearSaveError,
 } = useTranslations()
 
 // ── Inline edit state ──────────────────────────────────────────────────────────
@@ -77,173 +85,197 @@ async function handleSaveAll() {
 <template>
   <div class="flex flex-col h-full" @keydown.escape="cancelEdit">
 
-    <!-- ── Header ──────────────────────────────────────────────────────── -->
-    <div class="flex items-center gap-3 px-6 py-3 border-b border-surface-200 bg-surface-0 shrink-0 flex-wrap">
-
-      <div class="flex-1 min-w-0">
-        <h1 class="text-sm font-semibold text-surface-900 truncate">
-          {{ appStore.currentProject?.name ?? 'Translations' }}
-        </h1>
-        <p class="text-xs text-surface-400 truncate font-mono mt-0.5">
-          {{ appStore.currentProject?.path }}
-        </p>
-      </div>
-
-      <!-- Stats -->
-      <div v-if="!loading && locales.length" class="flex items-center gap-3 shrink-0 text-center">
-        <div>
-          <div class="text-sm font-semibold text-surface-900">{{ locales.length }}</div>
-          <div class="text-xs text-surface-400">Locales</div>
-        </div>
-        <div>
-          <div class="text-sm font-semibold text-surface-900">{{ filteredRows.length }}</div>
-          <div class="text-xs text-surface-400">Keys</div>
-        </div>
-        <div v-if="missingCount > 0">
-          <div class="text-sm font-semibold text-red-500">{{ missingCount }}</div>
-          <div class="text-xs text-surface-400">Missing</div>
-        </div>
-        <div v-else>
-          <div class="text-sm font-semibold text-emerald-500">100%</div>
-          <div class="text-xs text-surface-400">Complete</div>
-        </div>
-      </div>
-
-      <!-- Unsaved changes indicator + save/discard -->
-      <template v-if="isDirty">
-        <div class="flex items-center gap-1.5 shrink-0">
-          <span class="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-          <span class="text-xs text-surface-500">
-            {{ pendingCount }} unsaved change{{ pendingCount !== 1 ? 's' : '' }}
+    <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
+    <Toolbar
+      :pt="{
+        root: { class: 'rounded-none border-0 border-b border-surface-200 px-6 py-2 shrink-0 bg-surface-0' },
+      }"
+    >
+      <template #start>
+        <div class="flex flex-col leading-tight min-w-0 mr-4">
+          <span class="text-sm font-semibold text-surface-900 truncate">
+            {{ appStore.currentProject?.name ?? 'Translations' }}
+          </span>
+          <span class="text-xs text-surface-400 font-mono truncate max-w-xs">
+            {{ appStore.currentProject?.path }}
           </span>
         </div>
-        <Button
-          label="Discard"
-          icon="pi pi-times"
-          severity="secondary"
-          outlined
-          size="small"
-          :disabled="saving"
-          @click="discardEdits"
-        />
-        <Button
-          label="Save All"
-          icon="pi pi-save"
-          size="small"
-          :loading="saving"
-          @click="handleSaveAll"
-        />
       </template>
 
-      <!-- Search -->
-      <div v-if="!loading && locales.length" class="relative shrink-0">
-        <i class="pi pi-search absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-400 text-xs pointer-events-none" />
-        <InputText
-          v-model="filterQuery"
-          placeholder="Search keys or values…"
-          class="pl-8 text-sm w-52"
-          size="small"
-        />
-      </div>
+      <template #end>
+        <div class="flex items-center gap-2 flex-wrap">
 
-      <Button
-        label="Open Another"
-        icon="pi pi-folder-open"
-        severity="secondary"
-        outlined
-        size="small"
-        @click="router.push('/')"
-      />
-    </div>
+          <!-- Stats -->
+          <template v-if="!loading && locales.length">
+            <Tag :value="`${locales.length} locales`" severity="secondary" />
+            <Tag :value="`${filteredRows.length} keys`" severity="secondary" />
+            <Tag
+              v-if="missingCount > 0"
+              :value="`${missingCount} missing`"
+              severity="danger"
+            />
+            <Tag v-else value="Complete ✓" severity="success" />
+          </template>
+
+          <!-- Dirty indicator + save/discard -->
+          <template v-if="isDirty">
+            <span class="flex items-center gap-1.5 text-xs text-surface-500">
+              <span class="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+              {{ pendingCount }} unsaved
+            </span>
+            <Button
+              label="Discard"
+              icon="pi pi-times"
+              severity="secondary"
+              outlined
+              size="small"
+              :disabled="saving"
+              @click="discardEdits"
+            />
+            <Button
+              label="Save All"
+              icon="pi pi-save"
+              size="small"
+              :loading="saving"
+              @click="handleSaveAll"
+            />
+          </template>
+
+          <!-- Search -->
+          <IconField v-if="!loading && locales.length">
+            <InputIcon class="pi pi-search" />
+            <InputText
+              v-model="filterQuery"
+              placeholder="Search keys or values…"
+              size="small"
+              class="w-52"
+            />
+          </IconField>
+
+          <Button
+            label="Open Another"
+            icon="pi pi-folder-open"
+            severity="secondary"
+            outlined
+            size="small"
+            @click="router.push('/')"
+          />
+        </div>
+      </template>
+    </Toolbar>
 
     <!-- Save error banner -->
-    <div
+    <Message
       v-if="saveError"
-      class="flex items-start gap-2.5 px-6 py-2.5 bg-red-50 border-b border-red-200 text-sm text-red-700 shrink-0"
+      severity="error"
+      closable
+      class="rounded-none border-0 border-b shrink-0 mx-0"
+      @close="clearSaveError"
     >
-      <i class="pi pi-exclamation-triangle mt-0.5 shrink-0" />
-      <span class="flex-1">{{ saveError }}</span>
-      <button class="text-red-400 hover:text-red-600 ml-2" @click="saveError = null">
-        <i class="pi pi-times text-xs" />
-      </button>
-    </div>
+      {{ saveError }}
+    </Message>
 
-    <!-- ── States ──────────────────────────────────────────────────────── -->
+    <!-- ── No project state ──────────────────────────────────────────────── -->
     <div
       v-if="!appStore.currentProject"
-      class="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8"
+      class="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center"
     >
       <div class="w-16 h-16 rounded-full bg-surface-100 flex items-center justify-center">
         <i class="pi pi-folder-open text-3xl text-surface-300" />
       </div>
-      <p class="text-surface-500 text-sm font-medium">No project open</p>
-      <Button label="Open Flutter Project" icon="pi pi-folder-open" size="small" @click="router.push('/')" />
+      <div>
+        <p class="text-surface-700 font-medium mb-1">No project open</p>
+        <p class="text-surface-400 text-sm">Open a Flutter project to view its translations.</p>
+      </div>
+      <Button label="Open Flutter Project" icon="pi pi-folder-open" @click="router.push('/')" />
     </div>
 
-    <div v-else-if="loading" class="flex-1 flex items-center justify-center gap-3 text-surface-500 text-sm">
-      <i class="pi pi-spin pi-spinner text-primary text-lg" />
-      Loading ARB files…
+    <!-- ── Loading state ─────────────────────────────────────────────────── -->
+    <div
+      v-else-if="loading"
+      class="flex-1 flex flex-col items-center justify-center gap-3 text-surface-500"
+    >
+      <ProgressSpinner style="width: 44px; height: 44px" strokeWidth="4" />
+      <span class="text-sm">Loading ARB files…</span>
     </div>
 
-    <div v-else-if="error" class="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
-      <i class="pi pi-exclamation-circle text-3xl text-red-400" />
-      <p class="text-sm text-red-600 max-w-md">{{ error }}</p>
-      <Button label="Try Again" severity="secondary" size="small" @click="router.push('/')" />
+    <!-- ── Error state ───────────────────────────────────────────────────── -->
+    <div
+      v-else-if="error"
+      class="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center"
+    >
+      <Message severity="error" :closable="false" class="max-w-lg">{{ error }}</Message>
+      <Button label="Go Back" severity="secondary" icon="pi pi-arrow-left" @click="router.push('/')" />
     </div>
 
-    <!-- ── Translation Table ───────────────────────────────────────────── -->
-    <div v-else class="flex-1 overflow-auto">
-      <table class="w-full text-sm border-collapse">
+    <!-- ── DataTable ─────────────────────────────────────────────────────── -->
+    <div v-else class="flex-1 overflow-hidden">
+      <DataTable
+        :value="filteredRows"
+        data-key="key"
+        size="small"
+        scrollable
+        scroll-height="flex"
+        class="h-full"
+        :pt="{
+          table: { class: 'border-collapse' },
+          bodyRow: { class: 'border-b border-surface-100 hover:bg-surface-50/40 group transition-colors' },
+        }"
+      >
+        <!-- Key column (frozen) -->
+        <Column
+          header="Key"
+          frozen
+          :style="{ width: '16rem', minWidth: '16rem' }"
+          :pt="{
+            headerCell: { class: 'border-r border-surface-200 bg-surface-50 px-4 py-2.5' },
+            bodyCell: { class: 'border-r border-surface-100 px-4 py-2.5 align-top select-none' },
+          }"
+        >
+          <template #body="{ data }">
+            <div class="font-mono text-xs font-medium text-surface-800 leading-snug break-all">
+              {{ data.key }}
+            </div>
+            <div v-if="data.description" class="text-xs text-surface-400 mt-0.5 leading-snug">
+              {{ data.description }}
+            </div>
+          </template>
+        </Column>
 
-        <thead class="sticky top-0 z-10">
-          <tr class="bg-surface-50 border-b border-surface-200">
-            <th class="text-left px-4 py-2.5 font-medium text-surface-600 text-xs w-60 min-w-60 border-r border-surface-200 select-none">
-              Key
-            </th>
-            <th
-              v-for="locale in locales"
-              :key="locale"
-              class="text-left px-4 py-2.5 font-medium text-surface-600 text-xs min-w-56 border-r border-surface-200 last:border-r-0 select-none"
-            >
-              <div class="flex items-center gap-2">
-                <span class="inline-flex w-5 h-5 rounded bg-primary-100 text-primary font-bold items-center justify-center text-xs uppercase">
-                  {{ locale.slice(0, 2) }}
-                </span>
-                {{ locale }}
-              </div>
-            </th>
-          </tr>
-        </thead>
+        <!-- Dynamic locale columns -->
+        <Column
+          v-for="locale in locales"
+          :key="locale"
+          :style="{ minWidth: '14rem' }"
+          :pt="{
+            headerCell: { class: 'border-r border-surface-200 last:border-r-0 bg-surface-50 px-4 py-2.5' },
+            bodyCell: { class: 'border-r border-surface-100 last:border-r-0 p-0 align-top' },
+          }"
+        >
+          <template #header>
+            <div class="flex items-center gap-2">
+              <Tag
+                :value="locale.slice(0, 2).toUpperCase()"
+                severity="secondary"
+                class="font-bold"
+              />
+              <span class="text-xs font-medium text-surface-600">{{ locale }}</span>
+            </div>
+          </template>
 
-        <tbody>
-          <tr
-            v-for="row in filteredRows"
-            :key="row.key"
-            class="border-b border-surface-100 hover:bg-surface-50/50 group"
-          >
-            <!-- Key column (read-only) -->
-            <td class="px-4 py-2.5 border-r border-surface-100 align-top select-none">
-              <div class="font-mono text-xs text-surface-800 font-medium leading-snug">{{ row.key }}</div>
-              <div v-if="row.description" class="text-xs text-surface-400 mt-0.5 leading-snug">
-                {{ row.description }}
-              </div>
-            </td>
-
-            <!-- Locale cells (editable) -->
-            <td
-              v-for="locale in locales"
-              :key="locale"
-              class="px-0 py-0 border-r border-surface-100 last:border-r-0 align-top relative cursor-text"
+          <template #body="{ data }">
+            <div
+              class="w-full min-h-[38px] cursor-text"
               :class="{
-                'bg-red-50/60': getCellValue(row.key, locale) === undefined && !isActive(row.key, locale),
-                'bg-amber-50': isCellDirty(row.key, locale) && !isActive(row.key, locale),
-                'ring-2 ring-inset ring-primary bg-primary-50/30': isActive(row.key, locale),
+                'bg-red-50/60': getCellValue(data.key, locale) === undefined && !isActive(data.key, locale),
+                'bg-amber-50': isCellDirty(data.key, locale) && !isActive(data.key, locale),
+                'ring-2 ring-inset ring-primary': isActive(data.key, locale),
               }"
-              @click="!isActive(row.key, locale) && startEdit(row, locale)"
+              @click="!isActive(data.key, locale) && startEdit(data as TranslationRow, locale)"
             >
-              <!-- Editing textarea (shown when cell is active) -->
+              <!-- Editing textarea -->
               <textarea
-                v-if="isActive(row.key, locale)"
+                v-if="isActive(data.key, locale)"
                 v-focus
                 v-model="activeEdit!.value"
                 rows="1"
@@ -255,38 +287,44 @@ async function handleSaveAll() {
                 @input="autoResize"
               />
 
-              <!-- Display value (shown when cell is not active) -->
-              <div v-else class="px-4 py-2.5 min-h-[38px] flex items-start gap-2 group/cell">
+              <!-- Display value -->
+              <div v-else class="px-4 py-2.5 flex items-start gap-2 group/cell">
                 <div class="flex-1 min-w-0">
                   <span
-                    v-if="getCellValue(row.key, locale) !== undefined"
+                    v-if="getCellValue(data.key, locale) !== undefined"
                     class="text-xs leading-snug break-words block"
-                    :class="isCellDirty(row.key, locale) ? 'text-amber-700 font-medium' : 'text-surface-700'"
+                    :class="isCellDirty(data.key, locale)
+                      ? 'text-amber-700 font-medium'
+                      : 'text-surface-700'"
                   >
-                    {{ getCellValue(row.key, locale) }}
+                    {{ getCellValue(data.key, locale) }}
                   </span>
-                  <span v-else class="inline-flex items-center gap-1 text-xs text-red-400">
+                  <span v-else class="inline-flex items-center gap-1 text-xs text-red-400 italic">
                     <i class="pi pi-plus-circle text-xs" />
                     Add translation
                   </span>
                 </div>
-                <i class="pi pi-pencil text-xs text-surface-300 opacity-0 group-hover/cell:opacity-100 transition-opacity mt-0.5 shrink-0" />
+                <i
+                  class="pi pi-pencil text-xs text-surface-300 opacity-0 group-hover/cell:opacity-100 transition-opacity mt-0.5 shrink-0"
+                />
                 <span
-                  v-if="isCellDirty(row.key, locale)"
+                  v-if="isCellDirty(data.key, locale)"
                   class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-1"
                 />
               </div>
-            </td>
-          </tr>
+            </div>
+          </template>
+        </Column>
 
-          <!-- Empty search state -->
-          <tr v-if="filteredRows.length === 0">
-            <td :colspan="locales.length + 1" class="text-center py-16 text-surface-400 text-sm">
-              No keys match <span class="font-mono text-surface-500">"{{ filterQuery }}"</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+        <!-- Empty search state -->
+        <template #empty>
+          <div class="text-center py-16 text-surface-400 text-sm">
+            <i class="pi pi-search text-2xl text-surface-200 block mb-3" />
+            No keys match
+            <span class="font-mono text-surface-500">"{{ filterQuery }}"</span>
+          </div>
+        </template>
+      </DataTable>
     </div>
 
   </div>

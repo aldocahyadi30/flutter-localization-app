@@ -38,5 +38,16 @@ export const useAppStore = defineStore('app', () => {
     currentProject.value = null
   }
 
-  return { currentProject, recentProjects, openProject, clearCurrentProject }
+  function removeProject(project: Project) {
+    const idx = recentProjects.value.findIndex(p => p.path === project.path)
+    if (idx !== -1) {
+      recentProjects.value.splice(idx, 1)
+      saveRecent(recentProjects.value)
+      if (currentProject.value?.path === project.path) {
+        currentProject.value = null
+      }
+    }
+  }
+
+  return { currentProject, recentProjects, openProject, clearCurrentProject, removeProject }
 })
