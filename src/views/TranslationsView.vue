@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import Button from 'primevue/button'
-import Column from 'primevue/column'
-import DataTable from 'primevue/datatable'
 import IconField from 'primevue/iconfield'
 import InputIcon from 'primevue/inputicon'
 import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
+import Panel from 'primevue/panel'
 import ProgressSpinner from 'primevue/progressspinner'
-import Tag from 'primevue/tag'
 import Toolbar from 'primevue/toolbar'
 import { nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -24,6 +22,7 @@ const {
   isDirty, pendingCount, saving, saveError,
   getCellValue, isCellDirty, setCellValue,
   saveAll, discardEdits, clearSaveError,
+  load,
 } = useTranslations()
 
 // ── Inline edit state ──────────────────────────────────────────────────────────
@@ -80,15 +79,23 @@ async function handleSaveAll() {
   await nextTick()
   await saveAll()
 }
+
+// Convert a locale code to a flag emoji (e.g. "en" → "🇬🇧", "id" → "🇮🇩")
+function localeFlag(locale: string): string {
+  const cc = locale.slice(0, 2).toUpperCase()
+  return [...cc]
+    .map(c => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
+    .join('')
+}
 </script>
 
 <template>
   <div class="flex flex-col h-full" @keydown.escape="cancelEdit">
 
-    <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
+    <!-- Toolbar -->
     <Toolbar
       :pt="{
-        root: { class: 'rounded-none border-0 border-b border-surface-200 px-6 py-2 shrink-0 bg-surface-0' },
+        root: { class: 'rounded-none border-0 border-b border-surface-100 px-6 py-3 shrink-0 bg-white' },
       }"
     >
       <template #start>
@@ -96,31 +103,35 @@ async function handleSaveAll() {
           <span class="text-sm font-semibold text-surface-900 truncate">
             {{ appStore.currentProject?.name ?? 'Translations' }}
           </span>
-          <span class="text-xs text-surface-400 font-mono truncate max-w-xs">
+          <span class="text-xs text-surface-400 font-mono truncate max-w-xs mt-0.5">
             {{ appStore.currentProject?.path }}
           </span>
         </div>
       </template>
 
       <template #end>
-        <div class="flex items-center gap-2 flex-wrap">
+        <div class="flex items-center gap-3 flex-wrap">
 
           <!-- Stats -->
           <template v-if="!loading && locales.length">
-            <Tag :value="`${locales.length} locales`" severity="secondary" />
-            <Tag :value="`${filteredRows.length} keys`" severity="secondary" />
-            <Tag
-              v-if="missingCount > 0"
-              :value="`${missingCount} missing`"
-              severity="danger"
-            />
-            <Tag v-else value="Complete ✓" severity="success" />
+            <span class="text-xs text-surface-500">
+              <span class="font-semibold text-surface-700 tabular-nums">{{ locales.length }}</span> locales
+            </span>
+            <span class="text-surface-200 text-sm">·</span>
+            <span class="text-xs text-surface-500">
+              <span class="font-semibold text-surface-700 tabular-nums">{{ filteredRows.length }}</span> keys
+            </span>
+            <span class="text-surface-200 text-sm">·</span>
+            <span v-if="missingCount > 0" class="text-xs font-semibold text-red-500 tabular-nums">{{ missingCount }} missing</span>
+            <span v-else class="text-xs font-semibold text-green-600">All complete ✓</span>
           </template>
+
+          <div v-if="isDirty" class="h-4 w-px bg-surface-200" />
 
           <!-- Dirty indicator + save/discard -->
           <template v-if="isDirty">
-            <span class="flex items-center gap-1.5 text-xs text-surface-500">
-              <span class="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+            <span class="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
               {{ pendingCount }} unsaved
             </span>
             <Button
@@ -141,6 +152,8 @@ async function handleSaveAll() {
             />
           </template>
 
+          <div v-if="!loading && locales.length" class="h-4 w-px bg-surface-200" />
+
           <!-- Search -->
           <IconField v-if="!loading && locales.length">
             <InputIcon class="pi pi-search" />
@@ -148,15 +161,26 @@ async function handleSaveAll() {
               v-model="filterQuery"
               placeholder="Search keys or values…"
               size="small"
-              class="w-52"
+              class="w-48"
             />
           </IconField>
 
           <Button
-            label="Open Another"
+            v-tooltip.bottom="'Reload project'"
+            icon="pi pi-refresh"
+            severity="secondary"
+            text
+            rounded
+            size="small"
+            :loading="loading"
+            @click="load"
+          />
+          <Button
+            v-tooltip.bottom="'Open another project'"
             icon="pi pi-folder-open"
             severity="secondary"
-            outlined
+            text
+            rounded
             size="small"
             @click="router.push('/')"
           />
@@ -208,123 +232,140 @@ async function handleSaveAll() {
       <Button label="Go Back" severity="secondary" icon="pi pi-arrow-left" @click="router.push('/')" />
     </div>
 
-    <!-- ── DataTable ─────────────────────────────────────────────────────── -->
-    <div v-else class="flex-1 overflow-hidden">
-      <DataTable
-        :value="filteredRows"
-        data-key="key"
-        size="small"
-        scrollable
-        scroll-height="flex"
-        class="h-full"
-        :pt="{
-          table: { class: 'border-collapse' },
-          bodyRow: { class: 'border-b border-surface-100 hover:bg-surface-50/40 group transition-colors' },
-        }"
-      >
-        <!-- Key column (frozen) -->
-        <Column
-          header="Key"
-          frozen
-          :style="{ width: '16rem', minWidth: '16rem' }"
-          :pt="{
-            headerCell: { class: 'border-r border-surface-200 bg-surface-50 px-4 py-2.5' },
-            bodyCell: { class: 'border-r border-surface-100 px-4 py-2.5 align-top select-none' },
-          }"
-        >
-          <template #body="{ data }">
-            <div class="font-mono text-xs font-medium text-surface-800 leading-snug break-all">
-              {{ data.key }}
-            </div>
-            <div v-if="data.description" class="text-xs text-surface-400 mt-0.5 leading-snug">
-              {{ data.description }}
-            </div>
-          </template>
-        </Column>
-
-        <!-- Dynamic locale columns -->
-        <Column
-          v-for="locale in locales"
-          :key="locale"
-          :style="{ minWidth: '14rem' }"
-          :pt="{
-            headerCell: { class: 'border-r border-surface-200 last:border-r-0 bg-surface-50 px-4 py-2.5' },
-            bodyCell: { class: 'border-r border-surface-100 last:border-r-0 p-0 align-top' },
-          }"
-        >
-          <template #header>
-            <div class="flex items-center gap-2">
-              <Tag
-                :value="locale.slice(0, 2).toUpperCase()"
-                severity="secondary"
-                class="font-bold"
-              />
-              <span class="text-xs font-medium text-surface-600">{{ locale }}</span>
-            </div>
-          </template>
-
-          <template #body="{ data }">
-            <div
-              class="w-full min-h-[38px] cursor-text"
-              :class="{
-                'bg-red-50/60': getCellValue(data.key, locale) === undefined && !isActive(data.key, locale),
-                'bg-amber-50': isCellDirty(data.key, locale) && !isActive(data.key, locale),
-                'ring-2 ring-inset ring-primary': isActive(data.key, locale),
-              }"
-              @click="!isActive(data.key, locale) && startEdit(data as TranslationRow, locale)"
-            >
-              <!-- Editing textarea -->
-              <textarea
-                v-if="isActive(data.key, locale)"
-                v-focus
-                v-model="activeEdit!.value"
-                rows="1"
-                class="w-full px-4 py-2.5 text-xs text-surface-900 leading-snug bg-transparent border-0 outline-none resize-none overflow-hidden block"
-                @blur="commitEdit"
-                @keydown.enter.exact.prevent="commitEdit"
-                @keydown.escape.prevent="cancelEdit"
-                @click.stop
-                @input="autoResize"
-              />
-
-              <!-- Display value -->
-              <div v-else class="px-4 py-2.5 flex items-start gap-2 group/cell">
-                <div class="flex-1 min-w-0">
-                  <span
-                    v-if="getCellValue(data.key, locale) !== undefined"
-                    class="text-xs leading-snug break-words block"
-                    :class="isCellDirty(data.key, locale)
-                      ? 'text-amber-700 font-medium'
-                      : 'text-surface-700'"
-                  >
-                    {{ getCellValue(data.key, locale) }}
-                  </span>
-                  <span v-else class="inline-flex items-center gap-1 text-xs text-red-400 italic">
-                    <i class="pi pi-plus-circle text-xs" />
-                    Add translation
-                  </span>
-                </div>
-                <i
-                  class="pi pi-pencil text-xs text-surface-300 opacity-0 group-hover/cell:opacity-100 transition-opacity mt-0.5 shrink-0"
-                />
-                <span
-                  v-if="isCellDirty(data.key, locale)"
-                  class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-1"
-                />
-              </div>
-            </div>
-          </template>
-        </Column>
+    <!-- Panel list -->
+    <div v-else class="flex-1 overflow-y-auto bg-surface-50/60">
+      <div class="p-5">
 
         <!-- Empty search state -->
-        <template #empty>
-          <div class="text-center py-16 text-surface-400 text-sm">
-            <i class="pi pi-search text-2xl text-surface-200 block mb-3" />
-            No keys match
-            <span class="font-mono text-surface-500">"{{ filterQuery }}"</span>
-          </div>
-        </template>
-      </DataTable>
+        <div v-if="filteredRows.length === 0" class="text-center py-20 text-surface-400 text-sm">
+          <i class="pi pi-search text-3xl text-surface-200 block mb-4" />
+          No keys match <span class="font-mono text-surface-600">"{{ filterQuery }}"</span>
+        </div>
+
+        <div v-else class="flex flex-col gap-2 max-w-3xl mx-auto">
+          <Panel
+            v-for="row in filteredRows"
+            :key="row.key"
+            toggleable
+            :collapsed="true"
+            :pt="{
+              root: { class: 'bg-white rounded-xl border border-surface-100 shadow-sm overflow-hidden' },
+              header: { class: 'px-5 py-3 hover:bg-surface-50/80 transition-colors cursor-pointer select-none' },
+              content: { class: 'p-0 border-t border-surface-100' },
+            }"
+          >
+            <template #header>
+              <div class="flex items-center gap-3 flex-1 min-w-0">
+
+                <!-- Status dot -->
+                <span
+                  class="w-2 h-2 rounded-full shrink-0 transition-colors"
+                  :class="locales.some(l => isCellDirty(row.key, l))
+                    ? 'bg-amber-400'
+                    : locales.every(l => getCellValue(row.key, l) !== undefined)
+                      ? 'bg-green-400'
+                      : 'bg-red-400'"
+                />
+
+                <!-- Key name -->
+                <span class="font-mono text-xs font-semibold text-surface-800 truncate">{{ row.key }}</span>
+
+                <!-- Description -->
+                <span
+                  v-if="row.description"
+                  class="text-xs text-surface-400 truncate hidden sm:block"
+                >
+                  {{ row.description }}
+                </span>
+
+                <!-- Progress -->
+                <div v-if="locales.length" class="flex items-center gap-2 ml-auto shrink-0">
+                  <span
+                    class="text-xs tabular-nums"
+                    :class="locales.every(l => getCellValue(row.key, l) !== undefined)
+                      ? 'text-green-600 font-semibold'
+                      : 'text-surface-400'"
+                  >
+                    {{ locales.filter(l => getCellValue(row.key, l) !== undefined).length }}/{{ locales.length }}
+                  </span>
+                  <div class="w-14 h-1 rounded-full bg-surface-100 overflow-hidden">
+                    <div
+                      class="h-full rounded-full transition-all duration-300"
+                      :class="locales.every(l => getCellValue(row.key, l) !== undefined)
+                        ? 'bg-green-400'
+                        : 'bg-red-400'"
+                      :style="{
+                        width: `${(locales.filter(l => getCellValue(row.key, l) !== undefined).length / locales.length) * 100}%`
+                      }"
+                    />
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Locale rows -->
+            <div>
+              <div
+                v-for="locale in locales"
+                :key="locale"
+                class="flex items-start gap-4 px-5 py-2.5 group border-b border-surface-50 last:border-b-0 hover:bg-surface-50/50 transition-colors"
+              >
+                <!-- Locale label -->
+                <div class="flex items-center gap-2 w-24 shrink-0 pt-1">
+                  <span class="text-base leading-none select-none">{{ localeFlag(locale) }}</span>
+                  <span class="text-xs font-mono text-surface-400">{{ locale }}</span>
+                </div>
+
+                <!-- Translation cell -->
+                <div
+                  class="flex-1 rounded-lg min-h-[30px] cursor-text transition-all"
+                  :class="{
+                    'bg-red-50': getCellValue(row.key, locale) === undefined && !isActive(row.key, locale),
+                    'bg-amber-50': isCellDirty(row.key, locale) && !isActive(row.key, locale),
+                    'ring-2 ring-primary bg-white shadow-sm': isActive(row.key, locale),
+                  }"
+                  @click="!isActive(row.key, locale) && startEdit(row as TranslationRow, locale)"
+                >
+                  <!-- Editing textarea -->
+                  <textarea
+                    v-if="isActive(row.key, locale)"
+                    v-focus
+                    v-model="activeEdit!.value"
+                    rows="1"
+                    class="w-full px-3 py-1.5 text-xs text-surface-900 leading-snug bg-transparent border-0 outline-none resize-none overflow-hidden block rounded-lg"
+                    @blur="commitEdit"
+                    @keydown.enter.exact.prevent="commitEdit"
+                    @keydown.escape.prevent="cancelEdit"
+                    @click.stop
+                    @input="autoResize"
+                  />
+
+                  <!-- Display value -->
+                  <div v-else class="px-3 py-1.5 flex items-start gap-2">
+                    <div class="flex-1 min-w-0">
+                      <span
+                        v-if="getCellValue(row.key, locale) !== undefined"
+                        class="text-xs leading-snug break-words block"
+                        :class="isCellDirty(row.key, locale) ? 'text-amber-700 font-medium' : 'text-surface-600'"
+                      >
+                        {{ getCellValue(row.key, locale) }}
+                      </span>
+                      <span v-else class="text-xs text-red-400/80 italic">Missing translation</span>
+                    </div>
+                    <i
+                      class="pi pi-pencil text-[10px] text-surface-300 opacity-0 group-hover:opacity-100 transition-opacity mt-1 shrink-0"
+                    />
+                    <span
+                      v-if="isCellDirty(row.key, locale)"
+                      class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-1.5"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Panel>
+        </div>
+      </div>
     </div>
 
   </div>
